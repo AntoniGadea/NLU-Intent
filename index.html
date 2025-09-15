@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NLU Playground</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css"/>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha512-SnH5WK+bZxgPHs44uWIX+LLJAJ9/2PkPKZ5QiAj6Ta86w+fsb2TkcmfRyVX3pBnMFcV7oQPJkl9QevSCWr3W6A==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+
+    <style>
+        /* --- Overrides and Custom Theme --- */
+        :root {
+            --font-family: 'Inter', sans-serif;
+            --background-glow: radial-gradient(circle at top left, rgba(76, 36, 142, 0.4), transparent 40%),
+            radial-gradient(circle at bottom right, rgba(23, 66, 154, 0.4), transparent 40%);
+        }
+        body {
+            font-family: var(--font-family);
+            background-color: #111827;
+            background-image: var(--background-glow);
+            background-attachment: fixed;
+        }
+        .grid {
+            grid-template-columns: 1fr 1fr; gap: 2rem; align-items: start;
+            max-width: 1200px; margin: 0 auto;
+        }
+        .card {
+            background: rgba(25, 33, 51, 0.6); border: 1px solid rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px); border-radius: 1rem; padding: 2rem;
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+        }
+        h1, h2 { font-weight: 700; }
+        textarea { height: 150px; }
+
+        /* --- Header & Settings --- */
+        .header-container { display: flex; justify-content: space-between; align-items: center; }
+        #settings-button { background: none; border: none; cursor: pointer; color: var(--pico-muted-color); font-size: 1.2rem; }
+
+        /* --- Example Prompts --- */
+        .examples a {
+            display: inline-block; margin: 0.2rem; padding: 0.3rem 0.6rem;
+            border-radius: var(--pico-border-radius); background-color: var(--pico-secondary-background);
+            text-decoration: none; font-size: 0.85em; transition: background-color 0.2s;
+        }
+        .examples a:hover { background-color: var(--pico-primary-background); }
+
+        /* --- IMPROVEMENT: Prediction History Card --- */
+        .history-item {
+            border: 1px solid var(--pico-secondary-border-color);
+            border-radius: var(--pico-border-radius);
+            margin-bottom: 1rem;
+            animation: fadeIn 0.5s ease-out forwards;
+        }
+        .history-item summary { font-weight: 600; padding: 0.75rem; cursor: pointer; }
+        .history-item[open] summary { border-bottom: 1px solid var(--pico-secondary-border-color); }
+        .history-details { padding: 1rem; }
+        .intent-pill {
+            display: inline-block; background: var(--pico-primary-background); color: var(--pico-primary);
+            padding: 0.25rem 0.75rem; border-radius: 999px; font-weight: 600;
+        }
+        .confidence-bar-container { width: 100%; height: 8px; background-color: rgba(255, 255, 255, 0.1); border-radius: 999px; overflow: hidden; margin-top: 0.5rem; }
+        .confidence-bar { height: 100%; background-color: var(--pico-primary); border-radius: 999px; transition: width 0.5s ease-out; }
+        .history-item p { margin-bottom: 0.5rem; }
+        .history-item small { color: var(--pico-muted-color); }
+
+        @keyframes fadeIn { to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body>
+<main class="container">
+    <div class="grid">
+        <section class="card">
+            <div class="header-container">
+                <h1><i class="fa-solid fa-wand-magic-sparkles"></i> NLU Playground</h1>
+                <button id="settings-button" title="Configure API Endpoint"><i class="fa-solid fa-gear"></i></button>
+            </div>
+            <p>Enter a sentence and the AI will classify its intent.</p>
+
+            <form id="intent-form">
+                <textarea id="user-text" placeholder="e.g., 'Quisiera mover mi cita para el viernes por la tarde.'" required></textarea>
+                <button type="submit" id="submit-button">
+                    <i class="fa-solid fa-paper-plane"></i> Analyze Text
+                </button>
+            </form>
+
+            <div class="examples">
+                <h6><i class="fa-solid fa-lightbulb"></i> Try these examples:</h6>
+                <a href="#">Necesito una cita nueva cuanto antes.</a>
+                <a href="#">¿Cuál es el precio de una sesión?</a>
+                <a href="#">Quiero mover mi cita del martes.</a>
+                <a href="#">Ver mis próximas sesiones.</a>
+                <a href="#">Háblame de las promociones que tenéis.</a>
+                <a href="#">Necesito ayuda de una persona.</a>
+            </div>
+        </section>
+
+        <section class="card" id="result-container">
+            <div id="empty-state">
+                <h2><i class="fa-solid fa-chart-simple"></i> Results History</h2>
+                <p>Predictions will appear here as you analyze sentences.</p>
+            </div>
+            <div id="loading-state" style="display: none;">
+                <button aria-busy="true">Analyzing, please wait…</button>
+            </div>
+            <div id="history-container"></div>
+            <div id="error-state" style="display: none;">
+                <h2><i class="fa-solid fa-triangle-exclamation"></i> API Error</h2>
+                <p id="error-message"></p>
+            </div>
+        </section>
+    </div>
+</main>
+
+<script>
+    // --- APP STATE & CONFIG ---
+    let apiUrl = localStorage.getItem('nluApiUrl') || 'http://localhost:8000/predict';
+
+    // --- DOM ELEMENT REFERENCES ---
+    const form = document.getElementById('intent-form');
+    const textArea = document.getElementById('user-text');
+    const submitButton = document.getElementById('submit-button');
+    const examples = document.querySelectorAll('.examples a');
+    const settingsButton = document.getElementById('settings-button');
+
+    const emptyState = document.getElementById('empty-state');
+    const loadingState = document.getElementById('loading-state');
+    const historyContainer = document.getElementById('history-container');
+    const errorState = document.getElementById('error-state');
+    const errorMessage = document.getElementById('error-message');
+
+    // --- UI UPDATE FUNCTIONS ---
+    function showState(state) {
+        emptyState.style.display = 'none';
+        loadingState.style.display = 'none';
+        errorState.style.display = 'none';
+
+        if (state === 'loading') loadingState.style.display = 'block';
+        else if (state === 'error') errorState.style.display = 'block';
+        else if (state === 'history') { /* History container is always visible if not empty */ }
+        else emptyState.style.display = 'block'; // 'empty'
+
+        const isLoading = state === 'loading';
+        submitButton.disabled = isLoading;
+        submitButton.setAttribute('aria-busy', isLoading ? 'true' : 'false');
+    }
+
+    // --- IMPROVEMENT: Prediction History ---
+    function addResultToHistory(text, result) {
+        showState('history'); // Ensure empty state is hidden
+
+        const confidencePercent = (result.confidence * 100).toFixed(1);
+        const newHistoryItem = document.createElement('details');
+        newHistoryItem.className = 'history-item';
+        newHistoryItem.style.opacity = 0; // Start hidden for animation
+        newHistoryItem.innerHTML = `
+            <summary>
+                <span class="intent-pill">${result.intent}</span>
+                <small>(${confidencePercent}%)</small>
+            </summary>
+            <div class="history-details">
+                <p><strong>Input Text:</strong><br><small>"${text}"</small></p>
+                <p><strong>Confidence:</strong></p>
+                <div class="confidence-bar-container">
+                    <div class="confidence-bar" style="width: ${confidencePercent}%;"></div>
+                </div>
+                <p style="margin-top: 1rem;"><strong>Model Version:</strong><br><small>${result.model_version}</small></p>
+            </div>
+        `;
+        historyContainer.prepend(newHistoryItem);
+
+        // Trigger fade-in animation
+        setTimeout(() => newHistoryItem.style.opacity = 1, 10);
+    }
+
+    // --- MAIN LOGIC ---
+    async function handleSubmit(text) {
+        if (!text) return;
+        showState('loading');
+
+        try {
+            const response = await fetch(apiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text }),
+            });
+
+            if (!response.ok) {
+                // --- IMPROVEMENT: More detailed error message ---
+                throw new Error(`HTTP error! Status: ${response.status} ${response.statusText}`);
+            }
+
+            const data = await response.json();
+            addResultToHistory(text, data);
+
+        } catch (error) {
+            console.error('Error:', error);
+            errorMessage.textContent = `Could not connect to the API at ${apiUrl}. Details: ${error.message}`;
+            showState('error');
+        } finally {
+            if (loadingState.style.display === 'block') {
+                // If there's content in history, show it; otherwise show empty state
+                showState(historyContainer.children.length > 0 ? 'history' : 'empty');
+            }
+        }
+    }
+
+    // --- EVENT LISTENERS ---
+    form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        handleSubmit(textArea.value.trim());
+    });
+
+    examples.forEach(example => {
+        example.addEventListener('click', (e) => {
+            e.preventDefault();
+            const exampleText = e.target.textContent;
+            textArea.value = exampleText;
+            handleSubmit(exampleText);
+        });
+    });
+
+    // --- IMPROVEMENT: API Configuration Logic ---
+    settingsButton.addEventListener('click', () => {
+        const newUrl = prompt('Enter the new API endpoint URL:', apiUrl);
+        if (newUrl) {
+            apiUrl = newUrl.trim();
+            localStorage.setItem('nluApiUrl', apiUrl);
+            alert(`API endpoint updated to: ${apiUrl}`);
+        }
+    });
+
+</script>
+</body>
+</html>

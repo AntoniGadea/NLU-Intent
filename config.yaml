@@ -1,0 +1,78 @@
+# config.yaml (Versión Unificada y Mejorada)
+base:
+  project_name: "intent-classifier-svc"
+  random_state: 42
+
+data:
+  # Apuntamos al dataset expandido, ¡buena elección!
+  training_set: "data/training_data_expanded.json"
+  blind_test_set: "data/blind_test_set.json"
+  test_split_ratio: 0.15
+
+# Configuración del modelo base
+model_config:
+  model_name: "dccuchile/bert-base-spanish-wwm-cased"
+
+# --- Configuración del Pipeline de Entrenamiento ---
+training:
+  # Número de combinaciones a probar en la búsqueda de hiperparámetros
+  n_trials: 25
+
+# --- Espacio de Búsqueda para la Optimización de Hiperparámetros ---
+# El script leerá esta sección para construir dinámicamente el estudio de Optuna.
+# Solo los parámetros con 'tune: true' serán optimizados.
+hyperparameters:
+  - name: "num_train_epochs"
+    tune: true
+    type: "categorical"
+    values: [2, 3, 4]
+
+  - name: "learning_rate"
+    tune: true
+    type: "float"
+    low: 1.0e-5
+    high: 5.0e-4
+    log: true
+
+  - name: "batch_size"
+    tune: true
+    type: "categorical"
+    values: [8, 16]
+
+  - name: "weight_decay"
+    tune: true
+    type: "float"
+    low: 1.0e-4
+    high: 1.0e-2
+    log: true
+
+  - name: "warmup_steps"
+    tune: true
+    type: "categorical"
+    values: [0, 50, 100]
+
+  - name: "use_data_augmentation"
+    tune: true
+    type: "categorical"
+    values: [true, false]
+
+  - name: "use_focal_loss"
+    tune: true
+    type: "categorical"
+    values: [true, false]
+
+# Nota: He dejado fuera spell_correction y typo_handling por ahora,
+# ya que requerirían lógica adicional en el EnhancedIntentClassifier.
+# Podemos añadirlos en una siguiente iteración.
+
+# --- Configuración para la Expansión de Datos (Opcional) ---
+# Idealmente, la expansión de datos sería un paso previo con su propio script y config,
+# pero lo mantenemos aquí por ahora para referencia.
+# In your config.yaml
+data_expansion:
+  input_path: "data/training_data.json"
+  target_size: 12000
+  report_path: "reports/data_expansion_report.json"
+  random_seed: 42
+  deduplicate: true
+  min_text_length: 10
